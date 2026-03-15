@@ -116,6 +116,18 @@ func main() {
 	loadDotEnv(".env")
 	loadDotEnv("/Users/huangke/Developer/mylamp/.env")
 
+	// os.Args 是命令行参数切片，类似 Python 的 sys.argv。
+	// os.Args[0] 是程序本身的路径，os.Args[1:] 是用户传入的参数。
+	// [1:] 是切片操作，等价于 Python 的 sys.argv[1:]。
+	args := os.Args[1:]
+
+	// 没有参数时打印帮助信息并退出。
+	if len(args) == 0 {
+		// fmt.Println 输出字符串并自动换行，等价于 Python 的 print()。
+		fmt.Println(helpText)
+		os.Exit(0) // 退出码 0 表示正常退出
+	}
+
 	// os.Getenv 读取环境变量，返回字符串。不存在则返回 ""。
 	ip := os.Getenv("LAMP_IP")
 	token := os.Getenv("LAMP_TOKEN")
@@ -137,18 +149,6 @@ func main() {
 
 		// strings.Join 等价于 Python 的 ", ".join(missing)。
 		fatal(".env 文件中缺少配置项：%s", strings.Join(missing, ", "))
-	}
-
-	// os.Args 是命令行参数切片，类似 Python 的 sys.argv。
-	// os.Args[0] 是程序本身的路径，os.Args[1:] 是用户传入的参数。
-	// [1:] 是切片操作，等价于 Python 的 sys.argv[1:]。
-	args := os.Args[1:]
-
-	// 没有参数时打印帮助信息并退出。
-	if len(args) == 0 {
-		// fmt.Println 输出字符串并自动换行，等价于 Python 的 print()。
-		fmt.Println(helpText)
-		os.Exit(0) // 退出码 0 表示正常退出
 	}
 
 	// NewLamp 是构造函数（Go 没有 class，用函数返回结构体指针代替）。
