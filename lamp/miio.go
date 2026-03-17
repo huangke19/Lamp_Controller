@@ -21,6 +21,8 @@ import (
 	"encoding/json"  // JSON 序列化/反序列化，等价于 Python 的 json 模块
 	"fmt"            // 格式化输出和错误创建
 	"net"            // 网络连接，用于 UDP 通信
+	"os"             // 环境变量读取（调试开关）
+	"strings"        // 字符串处理
 	"time"           // 时间和超时
 )
 
@@ -40,6 +42,17 @@ var helloPacket = []byte{
 	0xff, 0xff, 0xff, 0xff,
 	0xff, 0xff, 0xff, 0xff,
 	0xff, 0xff, 0xff, 0xff,
+}
+
+func debugEnabled() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("LAMP_DEBUG")))
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+func debugf(format string, args ...any) {
+	if debugEnabled() {
+		fmt.Fprintf(os.Stderr, "[miio-debug] "+format+"\n", args...)
+	}
 }
 
 // MiIO 是一个结构体（struct），用于封装与小米设备通信所需的状态。
@@ -146,6 +159,7 @@ func (m *MiIO) Handshake() error {
 	// binary.BigEndian.Uint32 把 4 个字节解析为大端序 uint32 整数。
 	// 等价于 Python 的 int.from_bytes(buf[12:16], 'big')。
 	m.stamp = binary.BigEndian.Uint32(buf[12:16])
+	debugf("handshake ok ip=%s device_id=%s stamp=%d", m.IP, hex.EncodeToString(m.deviceID), m.stamp)
 	return nil // 返回 nil 表示没有错误，等价于 Python 的 return（没有异常）
 }
 
@@ -180,6 +194,7 @@ func (m *MiIO) Send(method string, params any) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
+	debugf("request id=%d method=%s params=%s", m.msgID, method, mustJSON(params))
 
 	// append(payload, 0x00) 在字节切片末尾追加一个空字节。
 	// python-miio 也会追加这个字节，设备期望 JSON 以 \0 结尾。
@@ -236,6 +251,7 @@ func (m *MiIO) Send(method string, params any) (json.RawMessage, error) {
 	if _, err := conn.Write(packet); err != nil {
 		return nil, err
 	}
+	debugf("packet sent len=%d encrypted_len=%d", len(packet), len(encrypted))
 
 	// 接收设备响应，最大 4096 字节。
 	buf := make([]byte, 4096)
@@ -257,6 +273,7 @@ func (m *MiIO) Send(method string, params any) (json.RawMessage, error) {
 	// 去掉末尾的空字节（设备响应也以 \0 结尾）。
 	// bytes.TrimRight 等价于 Python 的 data.rstrip(b"\x00")。
 	decrypted = bytes.TrimRight(decrypted, "\x00")
+	debugf("response raw=%s", string(decrypted))
 
 	// 用匿名结构体解析响应 JSON。
 	// 匿名结构体是一次性使用的结构体，不需要单独命名，直接在 var 里定义。
@@ -282,8 +299,17 @@ func (m *MiIO) Send(method string, params any) (json.RawMessage, error) {
 	if resp.Error != nil {
 		return nil, fmt.Errorf("device error %d: %s", resp.Error.Code, resp.Error.Message)
 	}
+	debugf("response result=%s", string(resp.Result))
 
 	return resp.Result, nil
+}
+
+func mustJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("<marshal error: %v>", err)
+	}
+	return string(b)
 }
 
 // miioKeyIV 根据 token 计算 AES 加密所需的 key 和 iv。

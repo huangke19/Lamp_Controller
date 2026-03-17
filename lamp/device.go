@@ -7,17 +7,25 @@ import (
 	"fmt"           // 格式化错误信息
 )
 
-// scenes 是场景名称到色温值的映射表。
+// scenePreset 是场景预设（色温 + 默认亮度）。
 //
-// map[string]int 是 Go 的字典类型，key 是 string，value 是 int。
-// 等价于 Python 的 dict[str, int]。
-// 花括号内是字面量初始化，冒号分隔 key 和 value，逗号分隔每对。
-var scenes = map[string]int{
-	"暖白": 2700,
-	"睡前": 2700,
-	"自然": 4000,
-	"冷白": 5100,
-	"阅读": 5100,
+// 预设值按照照明语义做区分：
+//   - 暖白：偏暖、舒适，常规亮度
+//   - 自然：中性白，均衡亮度
+//   - 冷白：偏冷、清晰，较高亮度
+//   - 阅读：中偏冷，确保对比和舒适度
+//   - 睡前：暖光低亮，减少刺激
+type scenePreset struct {
+	ColorTemp  int
+	Brightness int
+}
+
+var scenes = map[string]scenePreset{
+	"暖白": {ColorTemp: 3000, Brightness: 70},
+	"自然": {ColorTemp: 4000, Brightness: 65},
+	"冷白": {ColorTemp: 5000, Brightness: 85},
+	"阅读": {ColorTemp: 4500, Brightness: 80},
+	"睡前": {ColorTemp: 2700, Brightness: 20},
 }
 
 // Lamp 是台灯的控制结构体，持有一个 MiIO 通信对象。
@@ -109,7 +117,7 @@ func (l *Lamp) SetColorTemp(k int) error {
 	return l.setProps([]prop{{SIID: 2, PIID: 3, Value: k}})
 }
 
-// SetScene 设置场景模式（预设色温 + 可选亮度）。
+// SetScene 设置场景模式（预设色温 + 默认亮度，可选亮度覆盖默认值）。
 //
 // brightness 是 *int（指向整数的指针），而不是 int。
 // 这是 Go 表达"可选参数"的惯用方式：
@@ -118,30 +126,29 @@ func (l *Lamp) SetColorTemp(k int) error {
 //
 // Python 的等价写法是 brightness: Optional[int] = None。
 func (l *Lamp) SetScene(name string, brightness *int) error {
-	// 从 scenes map 查找色温值。
+	// 从 scenes map 查找预设值。
 	// map 查找返回两个值：value 和 ok（是否找到）。
-	// 等价于 Python 的 ct = scenes.get(name)，但 Go 用 ok 来判断是否存在。
-	ct, ok := scenes[name]
+	preset, ok := scenes[name]
 	if !ok {
 		// fmt.Errorf 创建错误，等价于 Python 的 raise ValueError(...)。
 		return fmt.Errorf("未知场景: %s（可用：暖白/自然/冷白/阅读/睡前）", name)
 	}
 
-	// 先设置色温（必须的）。
-	props := []prop{{SIID: 2, PIID: 3, Value: ct}}
-
-	// 如果有亮度参数，追加到 props 里，一次命令同时设置色温和亮度。
+	// 默认使用场景预设亮度；如果调用方传了亮度，则覆盖。
+	v := preset.Brightness
 	if brightness != nil {
-		// *brightness 解引用指针，取出实际的 int 值。
-		// 等价于 Python 里直接访问变量（Python 没有手动解引用的概念）。
-		v := *brightness
-		if v < 1 {
-			v = 1
-		} else if v > 100 {
-			v = 100
-		}
-		// append 追加元素，等价于 Python 的 props.append(...)。
-		props = append(props, prop{SIID: 2, PIID: 2, Value: v})
+		v = *brightness
+	}
+	if v < 1 {
+		v = 1
+	} else if v > 100 {
+		v = 100
+	}
+
+	// 场景一次请求同时设置色温和亮度。
+	props := []prop{
+		{SIID: 2, PIID: 3, Value: preset.ColorTemp},
+		{SIID: 2, PIID: 2, Value: v},
 	}
 
 	return l.setProps(props)

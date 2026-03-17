@@ -41,6 +41,12 @@ lamp 状态
 lamp 自然 60
 ```
 
+调试链路（打印握手、请求参数、响应）：
+
+```bash
+LAMP_DEBUG=1 lamp 自然 60
+```
+
 ## 命令参考
 
 | 命令 | 参数 | 说明 |
@@ -50,17 +56,60 @@ lamp 自然 60
 | `状态` | 无 | 查询当前状态 |
 | `亮度` | 1-100 | 设置亮度 |
 | `色温` | 2700-5100 | 设置色温（K） |
+| `serve` | 可选监听地址 | 启动 Web 控制台（默认 `:8080`） |
 | `暖白` | 可选亮度 | 2700K 暖白光 |
 | `自然` | 可选亮度 | 4000K 自然光 |
 | `冷白` | 可选亮度 | 5100K 冷白光 |
 | `阅读` | 可选亮度 | 5100K 阅读模式 |
 | `睡前` | 可选亮度 | 2700K 睡前模式 |
 
+说明：场景命令默认会应用该场景预设的色温与亮度；传入亮度参数时仅覆盖亮度。
+
 不带参数运行显示帮助：
 
 ```bash
 lamp
 ```
+
+## Web 控制台
+
+启动方式：
+
+```bash
+lamp serve
+```
+
+默认监听 `:8080`，浏览器打开：
+
+- `http://127.0.0.1:8080`
+
+也可以指定地址：
+
+```bash
+lamp serve 0.0.0.0:8080
+```
+
+或者使用环境变量：
+
+```bash
+LAMP_WEB_ADDR=:8080 lamp serve
+```
+
+### iOS 安装为主屏幕应用（PWA）
+
+1. 在 iPhone 的 Safari 打开 `http://<主机IP>:8080`
+2. 点击分享按钮，选择“添加到主屏幕”
+3. 之后可像 App 一样从主屏幕打开
+
+### 界面预览（iPhone 13）
+
+浅色主题：
+
+![浅色主题](docs/screenshots/mobile-light.png)
+
+深色主题：
+
+![深色主题](docs/screenshots/mobile-dark.png)
 
 ## 获取设备 Token
 
@@ -78,7 +127,19 @@ mylamp/
 │   ├── go.mod
 │   ├── main.go         # CLI 入口
 │   ├── miio.go         # MiIO 协议层（UDP + AES-128-CBC）
-│   └── device.go       # 台灯控制层
+│   ├── device.go       # 台灯控制层
+│   ├── web.go          # Web 服务层
+│   └── web/
+│       ├── index.html  # Web 控制台页面
+│       ├── manifest.webmanifest
+│       ├── sw.js
+│       ├── icon.svg
+│       ├── icon-180.png
+│       └── icon-512.png
+├── docs/
+│   └── screenshots/
+│       ├── mobile-light.png
+│       └── mobile-dark.png
 ├── LAMP_AGENT_GUIDE.md # AI Agent 使用说明
 └── README.md
 ```

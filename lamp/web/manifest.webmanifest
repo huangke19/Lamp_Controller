@@ -1,0 +1,25 @@
+{
+  "name": "台灯控制台",
+  "short_name": "台灯控制",
+  "description": "在局域网中控制台灯的 Web 应用",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#151920",
+  "theme_color": "#151920",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

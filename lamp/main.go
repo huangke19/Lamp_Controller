@@ -24,6 +24,7 @@ const helpText = `用法：
   lamp 状态
   lamp 亮度 <1-100>
   lamp 色温 <2700-5100>
+  lamp serve [监听地址]
   lamp <场景> [亮度1-100]
 
 场景：暖白 / 自然 / 冷白 / 阅读 / 睡前`
@@ -168,6 +169,18 @@ func main() {
 	// Go 的 switch 默认不会"穿透"到下一个 case（Python 没有 switch）。
 	// 不需要 break，每个 case 执行完自动退出。
 	switch cmd {
+	case "serve":
+		addr := os.Getenv("LAMP_WEB_ADDR")
+		if addr == "" {
+			addr = ":8080"
+		}
+		if len(args) > 1 {
+			addr = args[1]
+		}
+		if err := runWebServer(lamp, addr); err != nil {
+			fatal("Web 控制台启动失败：%v", err)
+		}
+
 	case "开":
 		// lamp.TurnOn() 调用 Lamp 结构体的 TurnOn 方法。
 		// 等价于 Python 的 lamp.turn_on()。
