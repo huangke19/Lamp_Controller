@@ -105,11 +105,11 @@ LAMP_WEB_ADDR=:8080 lamp serve
 
 浅色主题：
 
-![浅色主题](docs/screenshots/mobile-light.png)
+![浅色主题](https://raw.githubusercontent.com/huangke19/Lamp_Controller/main/docs/screenshots/mobile-light.png)
 
 深色主题：
 
-![深色主题](docs/screenshots/mobile-dark.png)
+![深色主题](https://raw.githubusercontent.com/huangke19/Lamp_Controller/main/docs/screenshots/mobile-dark.png)
 
 ## 获取设备 Token
 
