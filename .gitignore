@@ -1,6 +1,11 @@
 # Build output
 lamp/lamp
 
+# Local web screenshot tooling (Playwright)
+lamp/node_modules/
+lamp/package.json
+lamp/package-lock.json
+
 # Environment variables
 .env
 .env.local
