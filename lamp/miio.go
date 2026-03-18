@@ -12,18 +12,19 @@ package main
 // Go 编译器会报错（不是警告）如果 import 了但没有使用的包，
 // 这强制保持 import 列表整洁，没有 Python 里常见的"无用导入"问题。
 import (
-	"bytes"          // 字节操作，例如 bytes.Repeat、bytes.TrimRight
-	"crypto/aes"     // AES 对称加密算法
-	"crypto/cipher"  // 加密模式（CBC 等），需要和 crypto/aes 配合使用
-	"crypto/md5"     // MD5 哈希算法（用于生成加密 key/iv 和校验和）
+	"bytes"           // 字节操作，例如 bytes.Repeat、bytes.TrimRight
+	"crypto/aes"      // AES 对称加密算法
+	"crypto/cipher"   // 加密模式（CBC 等），需要和 crypto/aes 配合使用
+	"crypto/md5"      // MD5 哈希算法（用于生成加密 key/iv 和校验和）
 	"encoding/binary" // 二进制编解码，用于读写大端/小端整数
-	"encoding/hex"   // 十六进制字符串与字节互转（token 字符串 → 字节）
-	"encoding/json"  // JSON 序列化/反序列化，等价于 Python 的 json 模块
-	"fmt"            // 格式化输出和错误创建
-	"net"            // 网络连接，用于 UDP 通信
-	"os"             // 环境变量读取（调试开关）
-	"strings"        // 字符串处理
-	"time"           // 时间和超时
+	"encoding/hex"    // 十六进制字符串与字节互转（token 字符串 → 字节）
+	"encoding/json"   // JSON 序列化/反序列化，等价于 Python 的 json 模块
+	"fmt"             // 格式化输出和错误创建
+	"net"             // 网络连接，用于 UDP 通信
+	"os"              // 环境变量读取（调试开关）
+	"strings"         // 字符串处理
+	"sync"            // 互斥锁，保护并发访问
+	"time"            // 时间和超时
 )
 
 // helloPacket 是 MiIO 协议的握手包，固定 32 字节。
@@ -33,6 +34,8 @@ import (
 // []byte 是字节切片，类似 Python 的 bytes，但 Go 的切片是可变的。
 // {0x21, 0x31, ...} 是切片字面量，用花括号初始化，元素用逗号分隔。
 // 0x21 是十六进制字面量（等价于十进制 33），在 Python 里写法相同。
+const miioTimeout = 5 * time.Second
+
 var helloPacket = []byte{
 	0x21, 0x31, 0x00, 0x20, // 魔数 0x2131 + 包长度 0x0020（32字节）
 	0xff, 0xff, 0xff, 0xff, // unknown 字段，全 FF
@@ -64,11 +67,13 @@ func debugf(format string, args ...any) {
 //   - 首字母大写（如 IP、Token）= 公开，可以从其他包访问（类似 Python 的 public）
 //   - 首字母小写（如 deviceID、stamp）= 私有，只能在同一包内访问（类似 Python 的 _前缀约定）
 type MiIO struct {
-	IP       string // 设备 IP 地址
-	Token    []byte // 设备 token（已从十六进制字符串解码为字节）
-	deviceID []byte // 握手后从设备获取的 ID（4字节）
-	stamp    uint32 // 握手后从设备获取的时间戳（无符号 32 位整数）
-	msgID    int    // 消息序号，每次发送后递增，设备用它匹配请求和响应
+	IP            string     // 设备 IP 地址
+	Token         []byte     // 设备 token（已从十六进制字符串解码为字节）
+	deviceID      []byte     // 握手后从设备获取的 ID（4字节）
+	stamp         uint32     // 握手后从设备获取的时间戳（无符号 32 位整数）
+	msgID         int        // 消息序号，每次发送后递增，设备用它匹配请求和响应
+	mu            sync.Mutex // 保护并发访问，Send 全程持锁
+	handshakeDone bool       // 握手结果已缓存，避免每次 Send 重新握手
 }
 
 // NewMiIO 是 MiIO 的构造函数。
@@ -78,9 +83,10 @@ type MiIO struct {
 // 调用方通过检查 error 来判断是否成功，这是 Go 最核心的错误处理模式。
 //
 // Python 等价：
-//   class MiIO:
-//       def __init__(self, ip, token):
-//           ...
+//
+//	class MiIO:
+//	    def __init__(self, ip, token):
+//	        ...
 func NewMiIO(ip, token string) (*MiIO, error) {
 	// hex.DecodeString 把十六进制字符串转为字节切片。
 	// 例如："d208a096..." → []byte{0xd2, 0x08, 0xa0, 0x96, ...}
@@ -111,16 +117,12 @@ func (m *MiIO) Handshake() error {
 	// net.DialTimeout 建立 UDP 连接，5秒超时。
 	// "udp" 是网络类型，fmt.Sprintf 拼接 "192.168.x.x:54321"。
 	// 等价于 Python 的 socket.socket(socket.AF_INET, socket.SOCK_DGRAM)。
-	conn, err := net.DialTimeout("udp", fmt.Sprintf("%s:54321", m.IP), 5*time.Second)
+	conn, err := net.DialTimeout("udp", fmt.Sprintf("%s:54321", m.IP), miioTimeout)
 	if err != nil {
-		return err // 连接失败，返回错误（函数调用方会收到这个 error）
+		return err
 	}
-	// defer 确保函数返回前关闭连接，无论是正常返回还是提前 return。
 	defer conn.Close()
-
-	// SetDeadline 设置读写超时，防止无限等待。
-	// time.Now().Add(5 * time.Second) = 当前时间 + 5秒。
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	conn.SetDeadline(time.Now().Add(miioTimeout))
 
 	// Write 发送数据，_ 忽略返回的"写入字节数"（我们不需要它）。
 	if _, err := conn.Write(helloPacket); err != nil {
@@ -172,10 +174,16 @@ func (m *MiIO) Handshake() error {
 // json.RawMessage 是 []byte 的别名，表示"还没有解析的原始 JSON 数据"，
 // 让调用方自己决定如何解析，提供了灵活性。
 func (m *MiIO) Send(method string, params any) (json.RawMessage, error) {
-	// 每次发送前都做握手，获取最新的时间戳。
-	// 小米设备用时间戳防止重放攻击。
-	if err := m.Handshake(); err != nil {
-		return nil, err
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// 首次调用或上次设备通信出错后，重新握手获取最新时间戳。
+	// 缓存握手结果，避免每次命令都多一个 UDP 往返。
+	if !m.handshakeDone {
+		if err := m.Handshake(); err != nil {
+			return nil, err
+		}
+		m.handshakeDone = true
 	}
 
 	// 递增消息 ID，确保每条消息有唯一编号。
@@ -202,7 +210,10 @@ func (m *MiIO) Send(method string, params any) (json.RawMessage, error) {
 	payload = append(payload, 0x00)
 
 	// 用 token 对 payload 进行 AES 加密（函数定义在下面）。
-	encrypted := miioEncrypt(payload, m.Token)
+	encrypted, err := miioEncrypt(payload, m.Token)
+	if err != nil {
+		return nil, err
+	}
 
 	// uint16() 是类型转换，把 int 转为无符号 16 位整数。
 	// 等价于 Python 的 int 自动处理，但 Go 需要显式转换类型。
@@ -228,7 +239,7 @@ func (m *MiIO) Send(method string, params any) (json.RawMessage, error) {
 	// 计算 checksum = MD5(header + token + encrypted_payload)。
 	// md5.New() 创建 MD5 哈希对象，等价于 Python 的 hashlib.md5()。
 	h := md5.New()
-	h.Write(header)    // 分多次写入数据（MD5 是流式计算）
+	h.Write(header) // 分多次写入数据（MD5 是流式计算）
 	h.Write(m.Token)
 	h.Write(encrypted)
 	// h.Sum(nil) 返回最终的 MD5 值（16字节），nil 表示不追加到额外的字节切片。
@@ -241,12 +252,13 @@ func (m *MiIO) Send(method string, params any) (json.RawMessage, error) {
 	packet = append(packet, encrypted...)
 
 	// 重新建立 UDP 连接发送命令包（与握手分开，避免共用连接的状态问题）。
-	conn, err := net.DialTimeout("udp", fmt.Sprintf("%s:54321", m.IP), 5*time.Second)
+	conn, err := net.DialTimeout("udp", fmt.Sprintf("%s:54321", m.IP), miioTimeout)
 	if err != nil {
+		m.handshakeDone = false
 		return nil, err
 	}
 	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	conn.SetDeadline(time.Now().Add(miioTimeout))
 
 	if _, err := conn.Write(packet); err != nil {
 		return nil, err
@@ -297,6 +309,7 @@ func (m *MiIO) Send(method string, params any) (json.RawMessage, error) {
 
 	// 检查设备是否返回了错误。
 	if resp.Error != nil {
+		m.handshakeDone = false
 		return nil, fmt.Errorf("device error %d: %s", resp.Error.Code, resp.Error.Message)
 	}
 	debugf("response result=%s", string(resp.Result))
@@ -315,8 +328,9 @@ func mustJSON(v any) string {
 // miioKeyIV 根据 token 计算 AES 加密所需的 key 和 iv。
 //
 // 算法：
-//   key = MD5(token)
-//   iv  = MD5(key + token)
+//
+//	key = MD5(token)
+//	iv  = MD5(key + token)
 //
 // 这个函数返回两个值：key 和 iv（都是 []byte）。
 // Go 支持多返回值，不需要像 Python 一样 return (key, iv) 再解包。
@@ -337,24 +351,18 @@ func miioKeyIV(token []byte) (key, iv []byte) {
 }
 
 // miioEncrypt 用 AES-128-CBC 加密数据。
-func miioEncrypt(plaintext, token []byte) []byte {
+func miioEncrypt(plaintext, token []byte) ([]byte, error) {
 	key, iv := miioKeyIV(token)
 
-	// aes.NewCipher 创建 AES 加密块，key 长度决定 AES 位数（16字节 = AES-128）。
-	// _ 忽略错误（key 长度已经由 miioKeyIV 保证正确，不会出错）。
-	block, _ := aes.NewCipher(key)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("AES cipher init failed: %w", err)
+	}
 
-	// PKCS7 填充：AES-CBC 要求数据长度是块大小（16字节）的整数倍，
-	// 不足的部分用填充字节补齐。
 	padded := pkcs7Pad(plaintext, aes.BlockSize)
-
-	// make([]byte, len(padded)) 创建与填充后数据等长的输出缓冲区。
 	dst := make([]byte, len(padded))
-
-	// cipher.NewCBCEncrypter 创建 CBC 模式加密器，CryptBlocks 执行加密。
-	// 等价于 Python 的 Cipher(AES(key), modes.CBC(iv)).encryptor().update(data)。
 	cipher.NewCBCEncrypter(block, iv).CryptBlocks(dst, padded)
-	return dst
+	return dst, nil
 }
 
 // miioDecrypt 用 AES-128-CBC 解密数据。
@@ -367,7 +375,10 @@ func miioDecrypt(ciphertext, token []byte) ([]byte, error) {
 		return nil, fmt.Errorf("ciphertext length not a multiple of block size")
 	}
 
-	block, _ := aes.NewCipher(key)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("AES cipher init failed: %w", err)
+	}
 	dst := make([]byte, len(ciphertext))
 	cipher.NewCBCDecrypter(block, iv).CryptBlocks(dst, ciphertext)
 

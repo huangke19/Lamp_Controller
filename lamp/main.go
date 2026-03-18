@@ -115,7 +115,6 @@ func main() {
 	// 1. 当前工作目录（在项目目录运行时有效）
 	// 2. 固定的项目路径（从任意目录运行时有效）
 	loadDotEnv(".env")
-	loadDotEnv("/Users/huangke/Developer/mylamp/.env")
 
 	// os.Args 是命令行参数切片，类似 Python 的 sys.argv。
 	// os.Args[0] 是程序本身的路径，os.Args[1:] 是用户传入的参数。
@@ -232,13 +231,6 @@ func main() {
 		if err := lamp.SetBrightness(v); err != nil {
 			fatal("台灯控制失败：%v", err)
 		}
-
-		// 截断显示值（SetBrightness 内部已截断，这里同步显示实际生效值）。
-		if v < 1 {
-			v = 1
-		} else if v > 100 {
-			v = 100
-		}
 		fmt.Printf("亮度已设置：%d%%\n", v)
 
 	case "色温":
@@ -251,11 +243,6 @@ func main() {
 		}
 		if err := lamp.SetColorTemp(k); err != nil {
 			fatal("台灯控制失败：%v", err)
-		}
-		if k < 2700 {
-			k = 2700
-		} else if k > 5100 {
-			k = 5100
 		}
 		fmt.Printf("色温已设置：%dK\n", k)
 

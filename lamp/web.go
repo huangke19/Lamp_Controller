@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 //go:embed web/*
@@ -56,7 +57,7 @@ func runWebServer(lamp *Lamp, addr string) error {
 		var req struct {
 			On bool `json:"on"`
 		}
-		if err := decodeJSONBody(r, &req); err != nil {
+		if err := decodeJSONBody(w, r, &req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, err)
 			return
 		}
@@ -81,7 +82,7 @@ func runWebServer(lamp *Lamp, addr string) error {
 		var req struct {
 			Value int `json:"value"`
 		}
-		if err := decodeJSONBody(r, &req); err != nil {
+		if err := decodeJSONBody(w, r, &req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, err)
 			return
 		}
@@ -100,7 +101,7 @@ func runWebServer(lamp *Lamp, addr string) error {
 		var req struct {
 			Value int `json:"value"`
 		}
-		if err := decodeJSONBody(r, &req); err != nil {
+		if err := decodeJSONBody(w, r, &req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, err)
 			return
 		}
@@ -120,7 +121,7 @@ func runWebServer(lamp *Lamp, addr string) error {
 			Name       string `json:"name"`
 			Brightness *int   `json:"brightness"`
 		}
-		if err := decodeJSONBody(r, &req); err != nil {
+		if err := decodeJSONBody(w, r, &req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, err)
 			return
 		}
@@ -135,10 +136,11 @@ func runWebServer(lamp *Lamp, addr string) error {
 
 	log.Printf("Web 控制台已启动: %s", localURL(addr))
 	log.Printf("如需局域网访问，请使用: %s", lanURLHint(addr))
-	return http.ListenAndServe(addr, mux)
+	return http.ListenAndServe(addr, loggingMiddleware(mux))
 }
 
-func decodeJSONBody(r *http.Request, dst any) error {
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
@@ -162,7 +164,17 @@ func writeJSONError(w http.ResponseWriter, status int, err error) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("json encode error: %v", err)
+	}
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start))
+	})
 }
 
 func localURL(addr string) string {

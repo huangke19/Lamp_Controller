@@ -54,9 +54,10 @@ func NewLamp(ip, token string) (*Lamp, error) {
 // prop 是 MiOT 协议中的属性结构体。
 //
 // 小米设备用 siid（服务 ID）和 piid（属性 ID）来标识每个可控属性：
-//   siid=2, piid=1 → 开关
-//   siid=2, piid=2 → 亮度（1-100）
-//   siid=2, piid=3 → 色温（2700-5100K）
+//
+//	siid=2, piid=1 → 开关
+//	siid=2, piid=2 → 亮度（1-100）
+//	siid=2, piid=3 → 色温（2700-5100K）
 //
 // 字段标签 `json:"siid"` 控制 JSON 序列化时的字段名（小写）。
 // omitempty 表示当 Value 为零值时不输出这个字段（查询状态时不需要 value）。
@@ -200,13 +201,33 @@ func (l *Lamp) GetStatus() (*Status, error) {
 	var on bool
 	var brightness, colorTemp int
 
-	// 用 json.Unmarshal 把 RawMessage 解析到具体类型。
-	// 这里忽略错误（如果解析失败，变量保持零值）。
-	json.Unmarshal(props[0].Value, &on)
-	json.Unmarshal(props[1].Value, &brightness)
-	json.Unmarshal(props[2].Value, &colorTemp)
+	// 按 siid/piid 匹配属性值，不依赖返回顺序。
+	found := 0
+	for _, p := range props {
+		if p.SIID != 2 {
+			continue
+		}
+		switch p.PIID {
+		case 1:
+			if err := json.Unmarshal(p.Value, &on); err != nil {
+				return nil, fmt.Errorf("failed to parse on state: %w", err)
+			}
+			found++
+		case 2:
+			if err := json.Unmarshal(p.Value, &brightness); err != nil {
+				return nil, fmt.Errorf("failed to parse brightness: %w", err)
+			}
+			found++
+		case 3:
+			if err := json.Unmarshal(p.Value, &colorTemp); err != nil {
+				return nil, fmt.Errorf("failed to parse color temp: %w", err)
+			}
+			found++
+		}
+	}
+	if found < 3 {
+		return nil, fmt.Errorf("incomplete status response: expected 3 properties, got %d", found)
+	}
 
-	// 创建并返回 Status 指针。
-	// &Status{...} 创建结构体并取地址。
 	return &Status{On: on, Brightness: brightness, ColorTemp: colorTemp}, nil
 }
