@@ -59,27 +59,29 @@ go build -o ~/bin/lamp .
 ### 3. 运行示例
 
 ```bash
-lamp 开
-lamp 状态
-lamp 睡前
-lamp 阅读 70
+lamp on
+lamp status
+lamp night
+lamp focus 70
 ```
 
 ---
 
 ## 命令参考
 
-- 开关：`lamp 开` / `lamp 关`
-- 状态：`lamp 状态`
-- 亮度：`lamp 亮度 <1-100>`
-- 色温：`lamp 色温 <2700-5100>`
-- 场景：`lamp <暖白|自然|冷白|阅读|睡前> [亮度]`
+- 开关：`lamp on` / `lamp off`
+- 状态：`lamp status`
+- 亮度：`lamp brightness <1-100>`
+- 色温：`lamp temp <2700-5100>`
+- 场景：`lamp <warm|neutral|cool|focus|night> [brightness]`
 - Web：`lamp serve [地址]`（默认 `:8080`）
+- 服务：`lamp service <start|stop|restart|status>`
 
 常用示例：
 ```bash
-lamp 阅读
-lamp 自然 40
+lamp focus
+lamp neutral 40
+lamp service status
 lamp serve 0.0.0.0:8080
 ```
 
@@ -90,13 +92,13 @@ lamp serve 0.0.0.0:8080
 开启调试日志（握手、请求参数、响应）：
 
 ```bash
-LAMP_DEBUG=1 lamp 状态
+LAMP_DEBUG=1 lamp status
 ```
 
 或：
 
 ```bash
-LAMP_DEBUG=1 lamp 睡前 30
+LAMP_DEBUG=1 lamp night 30
 ```
 
 ---

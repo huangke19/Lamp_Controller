@@ -347,39 +347,39 @@
       box-shadow: 0 1px 5px rgba(31, 41, 55, 0.04);
     }
 
-    .scene[data-scene="自然"],
-    .scene[data-scene="冷白"],
-    .scene[data-scene="阅读"],
-    .scene[data-scene="睡前"] {
+    .scene[data-scene="neutral"],
+    .scene[data-scene="cool"],
+    .scene[data-scene="focus"],
+    .scene[data-scene="night"] {
       border-color: #d8dce3;
       color: #3f434a;
     }
 
-    .scene[data-scene="暖白"] {
+    .scene[data-scene="warm"] {
       background: linear-gradient(180deg, rgba(255, 253, 250, 0.84), rgba(247, 242, 233, 0.66));
       border-color: rgba(170, 148, 114, 0.24);
       color: #6d5b43;
     }
 
-    .scene[data-scene="自然"] {
+    .scene[data-scene="neutral"] {
       background: linear-gradient(180deg, rgba(251, 253, 248, 0.84), rgba(241, 245, 234, 0.66));
       border-color: rgba(134, 153, 116, 0.24);
       color: #55654a;
     }
 
-    .scene[data-scene="冷白"] {
+    .scene[data-scene="cool"] {
       background: linear-gradient(180deg, rgba(249, 252, 255, 0.84), rgba(237, 243, 251, 0.66));
       border-color: rgba(121, 150, 186, 0.24);
       color: #4a5e7d;
     }
 
-    .scene[data-scene="阅读"] {
+    .scene[data-scene="focus"] {
       background: linear-gradient(180deg, rgba(246, 251, 255, 0.84), rgba(234, 242, 251, 0.66));
       border-color: rgba(112, 142, 178, 0.24);
       color: #47607e;
     }
 
-    .scene[data-scene="睡前"] {
+    .scene[data-scene="night"] {
       background: linear-gradient(180deg, rgba(255, 249, 241, 0.84), rgba(247, 236, 221, 0.66));
       border-color: rgba(176, 144, 102, 0.24);
       color: #785f3f;
@@ -621,11 +621,11 @@
       background: linear-gradient(180deg, rgba(58, 65, 77, 0.84), rgba(40, 45, 55, 0.7));
     }
 
-    html[data-theme="dark"] .scene[data-scene="暖白"] { color: #f1dcc0; }
-    html[data-theme="dark"] .scene[data-scene="自然"] { color: #d4e2c7; }
-    html[data-theme="dark"] .scene[data-scene="冷白"] { color: #cfdcf5; }
-    html[data-theme="dark"] .scene[data-scene="阅读"] { color: #ccdbf2; }
-    html[data-theme="dark"] .scene[data-scene="睡前"] { color: #e8cfaa; }
+    html[data-theme="dark"] .scene[data-scene="warm"] { color: #f1dcc0; }
+    html[data-theme="dark"] .scene[data-scene="neutral"] { color: #d4e2c7; }
+    html[data-theme="dark"] .scene[data-scene="cool"] { color: #cfdcf5; }
+    html[data-theme="dark"] .scene[data-scene="focus"] { color: #ccdbf2; }
+    html[data-theme="dark"] .scene[data-scene="night"] { color: #e8cfaa; }
 
     html[data-theme="dark"] .number-input {
       background: rgba(37, 42, 51, 0.86);
@@ -689,37 +689,37 @@
     <section class="hero">
       <div class="hero-top">
         <span class="hero-tag">Home</span>
-        <button class="theme-toggle" id="theme-toggle" type="button">深色</button>
+        <button class="theme-toggle" id="theme-toggle" type="button">Dark</button>
       </div>
-      <h1>台灯控制台</h1>
-      <p>局域网直连，无需云端。支持开关、亮度、色温、场景控制。</p>
+      <h1>Lamp Console</h1>
+      <p>Local network control with no cloud dependency. Power, brightness, temp, and scene control included.</p>
       <div class="status-bar">
-        <span class="chip" id="chip-power">电源状态: --</span>
-        <span class="chip" id="chip-brightness">亮度: --%</span>
-        <span class="chip" id="chip-temp">色温: --K</span>
+        <span class="chip" id="chip-power">Power: --</span>
+        <span class="chip" id="chip-brightness">Brightness: --%</span>
+        <span class="chip" id="chip-temp">Temp: --K</span>
       </div>
     </section>
 
     <section class="body">
       <div class="card">
-        <h2>即时控制</h2>
+        <h2>Controls</h2>
         <div class="line">
-          <span>电源</span>
+          <span>Power</span>
           <div class="button-row">
-            <button class="btn btn-on" id="btn-on">开灯</button>
-            <button class="btn btn-off" id="btn-off">关灯</button>
+            <button class="btn btn-on" id="btn-on">On</button>
+            <button class="btn btn-off" id="btn-off">Off</button>
           </div>
         </div>
 
         <div class="line">
-          <span>亮度</span>
+          <span>Brightness</span>
           <div class="line-controls">
             <input class="number-input" id="brightness-input" type="number" min="1" max="100" step="1" value="60">
-            <button class="btn btn-ghost" id="apply-brightness">应用</button>
+            <button class="btn btn-ghost" id="apply-brightness">Apply</button>
           </div>
         </div>
         <div class="range-wrap">
-          <input id="brightness" type="range" min="1" max="100" value="60" aria-label="亮度">
+          <input id="brightness" type="range" min="1" max="100" value="60" aria-label="Brightness">
           <div class="range-meta">
             <span>1%</span>
             <strong id="brightness-value">60%</strong>
@@ -728,14 +728,14 @@
         </div>
 
         <div class="line">
-          <span>色温</span>
+          <span>Temp</span>
           <div class="line-controls">
             <input class="number-input" id="temp-input" type="number" min="2700" max="5100" step="50" value="4000">
-            <button class="btn btn-ghost" id="apply-temp">应用</button>
+            <button class="btn btn-ghost" id="apply-temp">Apply</button>
           </div>
         </div>
         <div class="range-wrap">
-          <input id="temp" type="range" min="2700" max="5100" step="50" value="4000" aria-label="色温">
+          <input id="temp" type="range" min="2700" max="5100" step="50" value="4000" aria-label="Temp">
           <div class="range-meta">
             <span>2700K</span>
             <strong id="temp-value">4000K</strong>
@@ -745,26 +745,26 @@
       </div>
 
       <div class="card">
-        <h2>场景模式</h2>
+        <h2>Scenes</h2>
         <div class="scene-grid">
-          <button class="btn scene" data-scene="暖白">暖白</button>
-          <button class="btn scene" data-scene="自然">自然</button>
-          <button class="btn scene" data-scene="冷白">冷白</button>
-          <button class="btn scene" data-scene="阅读">阅读</button>
-          <button class="btn scene" data-scene="睡前">睡前</button>
+          <button class="btn scene" data-scene="warm">Warm</button>
+          <button class="btn scene" data-scene="neutral">Neutral</button>
+          <button class="btn scene" data-scene="cool">Cool</button>
+          <button class="btn scene" data-scene="focus">Focus</button>
+          <button class="btn scene" data-scene="night">Night</button>
         </div>
         <p class="scene-note">
-          点击场景将使用场景预设色温与亮度；若需细调，请在左侧单独设置亮度/色温。
+          Each scene applies its preset temp and brightness. Fine-tune brightness or temp separately when needed.
         </p>
 
         <div class="line sync-line">
-          <span>状态同步</span>
+          <span>Status</span>
           <div class="button-row">
-            <button class="btn btn-ghost" id="refresh">刷新状态</button>
+            <button class="btn btn-ghost" id="refresh">Refresh</button>
           </div>
         </div>
 
-        <div class="toast" id="toast">准备就绪</div>
+        <div class="toast" id="toast">Ready</div>
       </div>
     </section>
 
@@ -796,7 +796,7 @@
 
     const live = {
       brightness: {
-        name: "亮度",
+        name: "Brightness",
         isDragging: false,
         inFlight: false,
         pendingValue: Number(brightness.value),
@@ -806,7 +806,7 @@
         send: (value) => api("/api/brightness", "POST", { value })
       },
       temp: {
-        name: "色温",
+        name: "Temp",
         isDragging: false,
         inFlight: false,
         pendingValue: Number(temp.value),
@@ -825,8 +825,8 @@
 
     function applyTheme(theme) {
       document.documentElement.setAttribute("data-theme", theme);
-      themeToggle.textContent = theme === "dark" ? "浅色" : "深色";
-      themeToggle.setAttribute("aria-label", theme === "dark" ? "切换到浅色主题" : "切换到深色主题");
+      themeToggle.textContent = theme === "dark" ? "Light" : "Dark";
+      themeToggle.setAttribute("aria-label", theme === "dark" ? "Switch to light theme" : "Switch to dark theme");
     }
 
     function initTheme() {
@@ -843,7 +843,7 @@
       if (!("serviceWorker" in navigator)) return;
       window.addEventListener("load", () => {
         navigator.serviceWorker.register("/sw.js").catch(() => {
-          // 静默失败：不影响主流程
+          // Silent failure: main flow still works without PWA.
         });
       });
     }
@@ -897,9 +897,9 @@
     }
 
     function updateStatusUI(s) {
-      chipPower.textContent = `电源状态: ${s.on ? "开" : "关"}`;
-      chipBrightness.textContent = `亮度: ${s.brightness}%`;
-      chipTemp.textContent = `色温: ${s.color_temp}K`;
+      chipPower.textContent = `Power: ${s.on ? "On" : "Off"}`;
+      chipBrightness.textContent = `Brightness: ${s.brightness}%`;
+      chipTemp.textContent = `Temp: ${s.color_temp}K`;
       chipPower.classList.toggle("on", s.on);
       chipPower.classList.toggle("off", !s.on);
       if (!anyDragging()) {
@@ -930,9 +930,9 @@
       try {
         const data = await api("/api/status");
         updateStatusUI(data);
-        if (!silent) setToast("状态已刷新", "ok");
+        if (!silent) setToast("Status refreshed", "ok");
       } catch (err) {
-        setToast(`状态获取失败: ${err.message}`, "error");
+        setToast(`Status refresh failed: ${err.message}`, "error");
       }
     }
 
@@ -974,7 +974,7 @@
         await state.send(value);
         state.lastSentValue = value;
       } catch (err) {
-        setToast(`${state.name}实时同步失败: ${err.message}`, "warn");
+        setToast(`${state.name} live sync failed: ${err.message}`, "warn");
       } finally {
         state.inFlight = false;
         if (Number(state.pendingValue) !== state.lastSentValue) {
@@ -1033,13 +1033,13 @@
     async function runAction(label, fn) {
       if (busy) return;
       setBusy(true);
-      setToast(`${label}中...`, "warn");
+      setToast(`${label}...`, "warn");
       try {
         await fn();
         await refreshStatus(true);
-        setToast(`${label}成功`, "ok");
+        setToast(`${label} succeeded`, "ok");
       } catch (err) {
-        setToast(`${label}失败: ${err.message}`, "error");
+        setToast(`${label} failed: ${err.message}`, "error");
       } finally {
         setBusy(false);
       }
@@ -1057,16 +1057,16 @@
     });
 
     $("#btn-on").addEventListener("click", () =>
-      runAction("开灯", () => api("/api/power", "POST", { on: true })));
+      runAction("Turn on", () => api("/api/power", "POST", { on: true })));
 
     $("#btn-off").addEventListener("click", () =>
-      runAction("关灯", () => api("/api/power", "POST", { on: false })));
+      runAction("Turn off", () => api("/api/power", "POST", { on: false })));
 
     $("#apply-brightness").addEventListener("click", () =>
-      runAction("设置亮度", () => api("/api/brightness", "POST", { value: Number(brightness.value) })));
+      runAction("Set brightness", () => api("/api/brightness", "POST", { value: Number(brightness.value) })));
 
     $("#apply-temp").addEventListener("click", () =>
-      runAction("设置色温", () => api("/api/color_temp", "POST", { value: Number(temp.value) })));
+      runAction("Set temp", () => api("/api/color_temp", "POST", { value: Number(temp.value) })));
 
     bindManualInput(
       brightnessInput,
@@ -1084,7 +1084,7 @@
     $$(".scene").forEach((btn) => {
       btn.addEventListener("click", () => {
         const scene = btn.dataset.scene;
-        runAction(`应用场景(${scene})`, () =>
+        runAction(`Apply scene (${scene})`, () =>
           api("/api/scene", "POST", {
             name: scene
           })

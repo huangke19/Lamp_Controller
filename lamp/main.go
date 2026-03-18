@@ -18,16 +18,38 @@ import (
 // Python 里没有真正的常量，只是约定用大写变量名表示常量。
 // 反引号 ` ` 是 Go 的原始字符串字面量，等价于 Python 的三引号字符串 """..."""，
 // 内容原样保留，不处理转义字符（\n 就是两个字符，不是换行）。
-const helpText = `用法：
-  lamp 开
-  lamp 关
-  lamp 状态
-  lamp 亮度 <1-100>
-  lamp 色温 <2700-5100>
-  lamp serve [监听地址]
-  lamp <场景> [亮度1-100]
+const helpText = `Usage:
+  lamp on
+  lamp off
+  lamp status
+  lamp brightness <1-100>
+  lamp temp <2700-5100>
+  lamp serve [listen-address]
+  lamp service <start|stop|restart|status>
+  lamp <scene> [brightness 1-100]
 
-场景：暖白 / 自然 / 冷白 / 阅读 / 睡前`
+Scenes: warm / neutral / cool / focus / night`
+
+func normalizeCommand(cmd string) string {
+	switch strings.ToLower(strings.TrimSpace(cmd)) {
+	case "on", "开":
+		return "on"
+	case "off", "关":
+		return "off"
+	case "status", "状态":
+		return "status"
+	case "brightness", "亮度":
+		return "brightness"
+	case "temp", "色温":
+		return "temp"
+	case "service":
+		return "service"
+	case "serve":
+		return "serve"
+	default:
+		return strings.TrimSpace(cmd)
+	}
+}
 
 // loadDotEnv 读取指定路径的 .env 文件，把其中的 KEY=VALUE 写入环境变量。
 //
@@ -128,6 +150,14 @@ func main() {
 		os.Exit(0) // 退出码 0 表示正常退出
 	}
 
+	cmd := normalizeCommand(args[0])
+	if cmd == "service" {
+		if err := runServiceCommand(args[1:]); err != nil {
+			fatal("service command failed: %v", err)
+		}
+		return
+	}
+
 	// os.Getenv 读取环境变量，返回字符串。不存在则返回 ""。
 	ip := os.Getenv("LAMP_IP")
 	token := os.Getenv("LAMP_TOKEN")
@@ -161,9 +191,6 @@ func main() {
 		fatal("%v", err)
 	}
 
-	// args[0] 是第一个命令参数（子命令名称）。
-	cmd := args[0]
-
 	// switch 语句，类似 Python 的 match/case（Python 3.10+）或 if/elif 链。
 	// Go 的 switch 默认不会"穿透"到下一个 case（Python 没有 switch）。
 	// 不需要 break，每个 case 执行完自动退出。
@@ -180,71 +207,71 @@ func main() {
 			fatal("Web 控制台启动失败：%v", err)
 		}
 
-	case "开":
+	case "on":
 		// lamp.TurnOn() 调用 Lamp 结构体的 TurnOn 方法。
 		// 等价于 Python 的 lamp.turn_on()。
 		// := 在这里重新声明了 err，覆盖了外层的 err（Go 允许在内层作用域重新声明）。
 		if err := lamp.TurnOn(); err != nil {
-			fatal("台灯控制失败：%v", err)
+			fatal("lamp control failed: %v", err)
 		}
-		fmt.Println("台灯已开")
+		fmt.Println("lamp turned on")
 
-	case "关":
+	case "off":
 		if err := lamp.TurnOff(); err != nil {
-			fatal("台灯控制失败：%v", err)
+			fatal("lamp control failed: %v", err)
 		}
-		fmt.Println("台灯已关")
+		fmt.Println("lamp turned off")
 
-	case "状态":
+	case "status":
 		// GetStatus 返回 *Status 指针和 error。
 		// s 是一个指向 Status 结构体的指针。
 		s, err := lamp.GetStatus()
 		if err != nil {
-			fatal("台灯控制失败：%v", err)
+			fatal("lamp control failed: %v", err)
 		}
 
 		// Go 没有三元表达式（Python 有 x if cond else y），
 		// 只能用 if/else 赋值。
-		onStr := "关"
+		onStr := "off"
 		if s.On {
-			onStr = "开"
+			onStr = "on"
 		}
 
 		// s.On、s.Brightness、s.ColorTemp 访问结构体字段。
 		// s 是指针，Go 会自动解引用，不需要写 (*s).On。
 		// %d 格式化整数，%% 输出字面量 % 符号（不是格式占位符）。
-		fmt.Printf("状态：%s\n亮度：%d%%\n色温：%dK\n", onStr, s.Brightness, s.ColorTemp)
+		fmt.Printf("Status: %s\nBrightness: %d%%\nTemp: %dK\n", onStr, s.Brightness, s.ColorTemp)
 
-	case "亮度":
+	case "brightness":
 		// 检查是否提供了亮度值参数。
 		if len(args) < 2 {
-			fatal("请指定亮度值，例如：lamp 亮度 80")
+			fatal("please provide brightness, for example: lamp brightness 80")
 		}
 
 		// strconv.Atoi 将字符串转为整数，等价于 Python 的 int()。
 		// 转换失败时 err != nil（例如传入了 "abc"）。
 		v, err := strconv.Atoi(args[1])
 		if err != nil {
-			fatal("亮度必须是整数，收到：%s", args[1])
+			fatal("brightness must be an integer, got: %s", args[1])
 		}
 
 		if err := lamp.SetBrightness(v); err != nil {
-			fatal("台灯控制失败：%v", err)
+			fatal("lamp control failed: %v", err)
 		}
-		fmt.Printf("亮度已设置：%d%%\n", v)
+		fmt.Printf("brightness set to %d%%\n", v)
 
-	case "色温":
+	case "temp":
 		if len(args) < 2 {
-			fatal("请指定色温值，例如：lamp 色温 4000")
+			fatal("please provide temp, for example: lamp temp 4000")
 		}
 		k, err := strconv.Atoi(args[1])
 		if err != nil {
-			fatal("色温必须是整数，收到：%s", args[1])
+			fatal("temp must be an integer, got: %s", args[1])
 		}
 		if err := lamp.SetColorTemp(k); err != nil {
-			fatal("台灯控制失败：%v", err)
+			fatal("lamp control failed: %v", err)
 		}
-		fmt.Printf("色温已设置：%dK\n", k)
+		fmt.Printf("temp set to %dK\n", k)
 
 	default:
 		// default 等价于最后的 else，匹配所有其他情况（场景名称）。
@@ -254,8 +281,9 @@ func main() {
 		// map 查找返回两个值：value 和 ok（bool）。
 		// _ 是"空白标识符"，表示忽略这个值（等价于 Python 的 _）。
 		// ok 为 false 表示 key 不存在。
-		if _, ok := scenes[cmd]; !ok {
-			fmt.Fprintf(os.Stderr, "错误：未知命令 '%s'\n\n%s\n", cmd, helpText)
+		sceneName, ok := normalizeSceneName(cmd)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Error: unknown command '%s'\n\n%s\n", cmd, helpText)
 			os.Exit(1)
 		}
 
@@ -267,24 +295,23 @@ func main() {
 		if len(args) > 1 {
 			v, err := strconv.Atoi(args[1])
 			if err != nil {
-				fatal("亮度必须是整数，收到：%s", args[1])
+				fatal("brightness must be an integer, got: %s", args[1])
 			}
 			// & 取变量 v 的地址，得到 *int 指针。
 			// 相当于"把 v 的值包装成一个可选值传出去"。
 			brightnessPtr = &v
 		}
 
-		if err := lamp.SetScene(cmd, brightnessPtr); err != nil {
-			fatal("台灯控制失败：%v", err)
+		if err := lamp.SetScene(sceneName, brightnessPtr); err != nil {
+			fatal("lamp control failed: %v", err)
 		}
 
-		// fmt.Sprintf 格式化字符串但不输出，返回字符串，等价于 Python 的 f"场景：{cmd}"。
-		msg := fmt.Sprintf("场景：%s", cmd)
+		msg := fmt.Sprintf("Scene: %s", sceneName)
 
 		// brightnessPtr != nil 检查是否有亮度值（等价于 Python 的 if brightness is not None）。
 		// *brightnessPtr 解引用指针，取出实际的整数值（等价于 Python 直接访问变量）。
 		if brightnessPtr != nil {
-			msg += fmt.Sprintf("，亮度：%d%%", *brightnessPtr)
+			msg += fmt.Sprintf(", brightness: %d%%", *brightnessPtr)
 		}
 		fmt.Println(msg)
 	}

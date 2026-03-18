@@ -21,11 +21,29 @@ type scenePreset struct {
 }
 
 var scenes = map[string]scenePreset{
-	"暖白": {ColorTemp: 3000, Brightness: 70},
-	"自然": {ColorTemp: 4000, Brightness: 65},
-	"冷白": {ColorTemp: 5000, Brightness: 85},
-	"阅读": {ColorTemp: 4500, Brightness: 80},
-	"睡前": {ColorTemp: 2700, Brightness: 20},
+	"warm":    {ColorTemp: 3000, Brightness: 70},
+	"neutral": {ColorTemp: 4000, Brightness: 65},
+	"cool":    {ColorTemp: 5000, Brightness: 85},
+	"focus":   {ColorTemp: 4500, Brightness: 80},
+	"night":   {ColorTemp: 2700, Brightness: 20},
+}
+
+var sceneAliases = map[string]string{
+	"warm":    "warm",
+	"暖白":      "warm",
+	"neutral": "neutral",
+	"自然":      "neutral",
+	"cool":    "cool",
+	"冷白":      "cool",
+	"focus":   "focus",
+	"阅读":      "focus",
+	"night":   "night",
+	"睡前":      "night",
+}
+
+func normalizeSceneName(name string) (string, bool) {
+	scene, ok := sceneAliases[name]
+	return scene, ok
 }
 
 // Lamp 是台灯的控制结构体，持有一个 MiIO 通信对象。
@@ -127,13 +145,14 @@ func (l *Lamp) SetColorTemp(k int) error {
 //
 // Python 的等价写法是 brightness: Optional[int] = None。
 func (l *Lamp) SetScene(name string, brightness *int) error {
+	name, ok := normalizeSceneName(name)
+	if !ok {
+		return fmt.Errorf("unknown scene: %s (available: warm/neutral/cool/focus/night)", name)
+	}
+
 	// 从 scenes map 查找预设值。
 	// map 查找返回两个值：value 和 ok（是否找到）。
-	preset, ok := scenes[name]
-	if !ok {
-		// fmt.Errorf 创建错误，等价于 Python 的 raise ValueError(...)。
-		return fmt.Errorf("未知场景: %s（可用：暖白/自然/冷白/阅读/睡前）", name)
-	}
+	preset := scenes[name]
 
 	// 默认使用场景预设亮度；如果调用方传了亮度，则覆盖。
 	v := preset.Brightness
