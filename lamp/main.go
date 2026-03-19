@@ -10,6 +10,7 @@ import (
 	"bufio"   // 带缓冲的 I/O，用于逐行读取文件（类似 Python 的 for line in f）
 	"fmt"     // 格式化输出，类似 Python 的 print / format
 	"os"      // 操作系统接口：文件、环境变量、命令行参数、退出程序
+	"path/filepath"
 	"strconv" // 字符串与数值互转，类似 Python 的 int()、str()
 	"strings" // 字符串操作，类似 Python 的 str.strip()、str.split() 等
 )
@@ -135,8 +136,11 @@ func fatal(format string, args ...any) {
 func main() {
 	// 尝试从两个位置加载 .env 文件：
 	// 1. 当前工作目录（在项目目录运行时有效）
-	// 2. 固定的项目路径（从任意目录运行时有效）
+	// 2. 可执行文件所在目录（安装到别处运行时有效）
 	loadDotEnv(".env")
+	if exePath, err := os.Executable(); err == nil {
+		loadDotEnv(filepath.Join(filepath.Dir(exePath), ".env"))
+	}
 
 	// os.Args 是命令行参数切片，类似 Python 的 sys.argv。
 	// os.Args[0] 是程序本身的路径，os.Args[1:] 是用户传入的参数。
