@@ -29,11 +29,14 @@
 
 ### 1. 配置设备信息
 
-创建 `.env`（可参考 `.env.example`）：
+正式服务模式下，创建系统级配置文件 `/usr/local/etc/mylamp.env`：
 
-```env
+```bash
+sudo mkdir -p /usr/local/etc
+sudo tee /usr/local/etc/mylamp.env >/dev/null <<'EOF'
 LAMP_IP=192.168.x.x
 LAMP_TOKEN=你的32位十六进制token
+EOF
 ```
 
 说明：
@@ -42,10 +45,14 @@ LAMP_TOKEN=你的32位十六进制token
 
 可选配置：
 
-```env
+```bash
+sudo tee -a /usr/local/etc/mylamp.env >/dev/null <<'EOF'
 LAMP_DEBUG=1
 LAMP_WEB_ADDR=:8080
+EOF
 ```
+
+开发或手动运行时，项目目录下的 `.env` 仍然可用；作为 macOS 后台服务时，程序优先读取 `/usr/local/etc/mylamp.env`。
 
 ### 2. 编译
 
@@ -75,13 +82,13 @@ lamp focus 70
 - 色温：`lamp temp <2700-5100>`
 - 场景：`lamp <warm|neutral|cool|focus|night> [brightness]`
 - Web：`lamp serve [地址]`（默认 `:8080`）
-- 服务：`lamp service <start|stop|restart|status>`
+- 服务：`sudo lamp service <start|stop|restart|status>`
 
 常用示例：
 ```bash
 lamp focus
 lamp neutral 40
-lamp service status
+sudo lamp service status
 lamp serve 0.0.0.0:8080
 ```
 
@@ -125,6 +132,48 @@ lamp serve 0.0.0.0:8080
 ```bash
 LAMP_WEB_ADDR=:8080 lamp serve
 ```
+
+## macOS 后台服务
+
+项目在 macOS 上使用 `launchd` 的 `LaunchDaemon` 作为系统级服务，适合常开机器长期运行。
+
+1. 安装二进制（示例）：
+
+```bash
+cd lamp
+go build -o /usr/local/bin/lamp .
+```
+
+2. 准备系统级配置文件：
+
+```bash
+sudo mkdir -p /usr/local/etc
+sudo tee /usr/local/etc/mylamp.env >/dev/null <<'EOF'
+LAMP_IP=192.168.x.x
+LAMP_TOKEN=你的32位十六进制token
+LAMP_WEB_ADDR=0.0.0.0:8080
+EOF
+```
+
+3. 启动服务：
+
+```bash
+sudo /usr/local/bin/lamp service start
+```
+
+常用命令：
+
+```bash
+sudo /usr/local/bin/lamp service status
+sudo /usr/local/bin/lamp service restart
+sudo /usr/local/bin/lamp service stop
+```
+
+系统服务文件和日志路径：
+- plist：`/Library/LaunchDaemons/com.huangke.mylamp.plist`
+- 配置：`/usr/local/etc/mylamp.env`
+- 标准输出日志：`/Library/Logs/mylamp.log`
+- 错误日志：`/Library/Logs/mylamp-error.log`
 
 ---
 

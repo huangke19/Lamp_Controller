@@ -7,9 +7,9 @@ package main
 // import 导入标准库包。Go 的标准库非常丰富，不需要 pip install。
 // 每个包名就是一个命名空间，调用时写 包名.函数名，例如 fmt.Println。
 import (
-	"bufio"   // 带缓冲的 I/O，用于逐行读取文件（类似 Python 的 for line in f）
-	"fmt"     // 格式化输出，类似 Python 的 print / format
-	"os"      // 操作系统接口：文件、环境变量、命令行参数、退出程序
+	"bufio" // 带缓冲的 I/O，用于逐行读取文件（类似 Python 的 for line in f）
+	"fmt"   // 格式化输出，类似 Python 的 print / format
+	"os"    // 操作系统接口：文件、环境变量、命令行参数、退出程序
 	"path/filepath"
 	"strconv" // 字符串与数值互转，类似 Python 的 int()、str()
 	"strings" // 字符串操作，类似 Python 的 str.strip()、str.split() 等
@@ -30,6 +30,8 @@ const helpText = `Usage:
   lamp <scene> [brightness 1-100]
 
 Scenes: warm / neutral / cool / focus / night`
+
+const systemConfigPath = "/usr/local/etc/mylamp.env"
 
 func normalizeCommand(cmd string) string {
 	switch strings.ToLower(strings.TrimSpace(cmd)) {
@@ -134,9 +136,12 @@ func fatal(format string, args ...any) {
 // main 是程序入口，Go 程序必须有且只有一个 main 函数。
 // 等价于 Python 的 if __name__ == "__main__": 代码块。
 func main() {
-	// 尝试从两个位置加载 .env 文件：
+	// 优先加载系统级配置，适合作为正式后台服务运行。
+	loadDotEnv(systemConfigPath)
+
+	// 再尝试兼容开发场景下的 .env 文件：
 	// 1. 当前工作目录（在项目目录运行时有效）
-	// 2. 可执行文件所在目录（安装到别处运行时有效）
+	// 2. 可执行文件所在目录（安装到别处手动运行时有效）
 	loadDotEnv(".env")
 	if exePath, err := os.Executable(); err == nil {
 		loadDotEnv(filepath.Join(filepath.Dir(exePath), ".env"))

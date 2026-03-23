@@ -12,9 +12,14 @@ import (
 	"text/template"
 )
 
-const launchAgentLabel = "com.huangke.mylamp"
+const (
+	serviceLabel      = "com.huangke.mylamp"
+	servicePlistPath  = "/Library/LaunchDaemons/com.huangke.mylamp.plist"
+	serviceStdoutPath = "/Library/Logs/mylamp.log"
+	serviceStderrPath = "/Library/Logs/mylamp-error.log"
+)
 
-var launchAgentTemplate = template.Must(template.New("plist").Parse(`<?xml version="1.0" encoding="UTF-8"?>
+var launchDaemonTemplate = template.Must(template.New("plist").Parse(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -31,22 +36,6 @@ var launchAgentTemplate = template.Must(template.New("plist").Parse(`<?xml versi
   <key>WorkingDirectory</key>
   <string>{{.WorkingDir}}</string>
 
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>LAMP_IP</key>
-    <string>{{.LampIP}}</string>
-    <key>LAMP_TOKEN</key>
-    <string>{{.LampToken}}</string>
-{{- if .LampDebug }}
-    <key>LAMP_DEBUG</key>
-    <string>{{.LampDebug}}</string>
-{{- end }}
-{{- if .LampWebAddr }}
-    <key>LAMP_WEB_ADDR</key>
-    <string>{{.LampWebAddr}}</string>
-{{- end }}
-  </dict>
-
   <key>RunAtLoad</key>
   <true/>
 
@@ -62,22 +51,18 @@ var launchAgentTemplate = template.Must(template.New("plist").Parse(`<?xml versi
 </plist>
 `))
 
-type launchAgentConfig struct {
-	Label       string
-	Program     string
-	Addr        string
-	WorkingDir  string
-	LampIP      string
-	LampToken   string
-	LampDebug   string
-	LampWebAddr string
-	StdoutPath  string
-	StderrPath  string
+type launchDaemonConfig struct {
+	Label      string
+	Program    string
+	Addr       string
+	WorkingDir string
+	StdoutPath string
+	StderrPath string
 }
 
 func runServiceCommand(args []string) error {
 	if len(args) == 0 {
-		fmt.Println("Usage: lamp service <start|stop|restart|status>")
+		fmt.Println("Usage: sudo lamp service <start|stop|restart|status>")
 		return nil
 	}
 
@@ -96,29 +81,40 @@ func runServiceCommand(args []string) error {
 }
 
 func serviceStart() error {
-	if err := ensureLaunchAgent(); err != nil {
+	if err := ensureRootPrivileges(); err != nil {
+		return err
+	}
+	if err := ensureServiceConfigFile(); err != nil {
+		return err
+	}
+	if err := ensureLaunchDaemon(); err != nil {
 		return err
 	}
 
-	uid := fmt.Sprintf("%d", os.Getuid())
-	plist := launchAgentPath()
-	_ = runLaunchctl("bootout", "gui/"+uid, plist)
-	if err := runLaunchctl("bootstrap", "gui/"+uid, plist); err != nil {
+	_ = runLaunchctl("bootout", "system", servicePlistPath)
+	if err := runLaunchctl("bootstrap", "system", servicePlistPath); err != nil {
 		return err
 	}
-	if err := runLaunchctl("kickstart", "-k", "gui/"+uid+"/"+launchAgentLabel); err != nil {
+	if err := runLaunchctl("enable", "system/"+serviceLabel); err != nil && !isLaunchctlAlreadyEnabled(err) {
+		return err
+	}
+	if err := runLaunchctl("kickstart", "-k", "system/"+serviceLabel); err != nil {
 		return err
 	}
 
 	fmt.Println("service started")
+	fmt.Printf("config: %s\n", systemConfigPath)
+	fmt.Printf("plist: %s\n", servicePlistPath)
 	fmt.Printf("Web UI: %s\n", localURL(serviceAddress()))
 	return nil
 }
 
 func serviceStop() error {
-	uid := fmt.Sprintf("%d", os.Getuid())
-	plist := launchAgentPath()
-	err := runLaunchctl("bootout", "gui/"+uid, plist)
+	if err := ensureRootPrivileges(); err != nil {
+		return err
+	}
+
+	err := runLaunchctl("bootout", "system", servicePlistPath)
 	if err != nil && !isLaunchctlNotLoaded(err) {
 		return err
 	}
@@ -134,11 +130,12 @@ func serviceRestart() error {
 }
 
 func serviceStatus() error {
-	uid := fmt.Sprintf("%d", os.Getuid())
-	out, err := exec.Command("launchctl", "print", "gui/"+uid+"/"+launchAgentLabel).CombinedOutput()
+	out, err := exec.Command("launchctl", "print", "system/"+serviceLabel).CombinedOutput()
 	if err != nil {
 		if isLaunchctlNotLoadedOutput(string(out)) {
 			fmt.Println("service status: stopped")
+			fmt.Printf("plist: %s\n", servicePlistPath)
+			fmt.Printf("config: %s\n", systemConfigPath)
 			return nil
 		}
 		return fmt.Errorf("launchctl print failed: %w\n%s", err, strings.TrimSpace(string(out)))
@@ -151,73 +148,73 @@ func serviceStatus() error {
 	}
 
 	fmt.Printf("service status: %s\n", state)
-	fmt.Printf("plist: %s\n", launchAgentPath())
+	fmt.Printf("plist: %s\n", servicePlistPath)
+	fmt.Printf("config: %s\n", systemConfigPath)
+	fmt.Printf("stdout: %s\n", serviceStdoutPath)
+	fmt.Printf("stderr: %s\n", serviceStderrPath)
 	fmt.Printf("Web UI: %s\n", localURL(serviceAddress()))
 	return nil
 }
 
-func ensureLaunchAgent() error {
-	cfg, err := currentLaunchAgentConfig()
+func ensureLaunchDaemon() error {
+	cfg, err := currentLaunchDaemonConfig()
 	if err != nil {
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(launchAgentPath()), 0o755); err != nil {
-		return fmt.Errorf("create launch agent directory: %w", err)
+	if err := os.MkdirAll(filepath.Dir(servicePlistPath), 0o755); err != nil {
+		return fmt.Errorf("create launch daemon directory: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(cfg.StdoutPath), 0o755); err != nil {
 		return fmt.Errorf("create log directory: %w", err)
 	}
 
 	var buf bytes.Buffer
-	if err := launchAgentTemplate.Execute(&buf, cfg); err != nil {
-		return fmt.Errorf("render launch agent: %w", err)
+	if err := launchDaemonTemplate.Execute(&buf, cfg); err != nil {
+		return fmt.Errorf("render launch daemon: %w", err)
 	}
-	if err := os.WriteFile(launchAgentPath(), buf.Bytes(), 0o644); err != nil {
-		return fmt.Errorf("write launch agent: %w", err)
+	if err := os.WriteFile(servicePlistPath, buf.Bytes(), 0o644); err != nil {
+		return fmt.Errorf("write launch daemon: %w", err)
 	}
 	return nil
 }
 
-func currentLaunchAgentConfig() (launchAgentConfig, error) {
-	ip := strings.TrimSpace(os.Getenv("LAMP_IP"))
-	token := strings.TrimSpace(os.Getenv("LAMP_TOKEN"))
-	if ip == "" || token == "" {
-		return launchAgentConfig{}, fmt.Errorf("LAMP_IP and LAMP_TOKEN are required for service start")
-	}
-
+func currentLaunchDaemonConfig() (launchDaemonConfig, error) {
 	exe, err := os.Executable()
 	if err != nil {
-		return launchAgentConfig{}, fmt.Errorf("resolve executable path: %w", err)
+		return launchDaemonConfig{}, fmt.Errorf("resolve executable path: %w", err)
 	}
 	exe, err = filepath.EvalSymlinks(exe)
 	if err != nil {
-		return launchAgentConfig{}, fmt.Errorf("resolve executable symlink: %w", err)
-	}
-
-	wd, err := os.Getwd()
-	if err != nil {
-		return launchAgentConfig{}, fmt.Errorf("resolve working directory: %w", err)
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return launchAgentConfig{}, fmt.Errorf("resolve home directory: %w", err)
+		return launchDaemonConfig{}, fmt.Errorf("resolve executable symlink: %w", err)
 	}
 
 	addr := serviceAddress()
-	return launchAgentConfig{
-		Label:       launchAgentLabel,
-		Program:     exe,
-		Addr:        addr,
-		WorkingDir:  wd,
-		LampIP:      ip,
-		LampToken:   token,
-		LampDebug:   strings.TrimSpace(os.Getenv("LAMP_DEBUG")),
-		LampWebAddr: strings.TrimSpace(os.Getenv("LAMP_WEB_ADDR")),
-		StdoutPath:  filepath.Join(home, "Library", "Logs", "mylamp.log"),
-		StderrPath:  filepath.Join(home, "Library", "Logs", "mylamp-error.log"),
+	return launchDaemonConfig{
+		Label:      serviceLabel,
+		Program:    exe,
+		Addr:       addr,
+		WorkingDir: filepath.Dir(exe),
+		StdoutPath: serviceStdoutPath,
+		StderrPath: serviceStderrPath,
 	}, nil
+}
+
+func ensureRootPrivileges() error {
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("this command must be run with sudo because it manages %s", servicePlistPath)
+	}
+	return nil
+}
+
+func ensureServiceConfigFile() error {
+	if _, err := os.Stat(systemConfigPath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("missing config file: %s", systemConfigPath)
+		}
+		return fmt.Errorf("read config file %s: %w", systemConfigPath, err)
+	}
+	return nil
 }
 
 func serviceAddress() string {
@@ -228,20 +225,17 @@ func serviceAddress() string {
 	return addr
 }
 
-func launchAgentPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join("~", "Library", "LaunchAgents", launchAgentLabel+".plist")
-	}
-	return filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
-}
-
 func runLaunchctl(args ...string) error {
 	out, err := exec.Command("launchctl", args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("launchctl %s failed: %w\n%s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+func isLaunchctlAlreadyEnabled(err error) bool {
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "service already enabled")
 }
 
 func isLaunchctlNotLoaded(err error) bool {
@@ -252,5 +246,6 @@ func isLaunchctlNotLoadedOutput(text string) bool {
 	text = strings.ToLower(text)
 	return strings.Contains(text, "could not find service") ||
 		strings.Contains(text, "input/output error") ||
-		strings.Contains(text, "service is disabled")
+		strings.Contains(text, "service is disabled") ||
+		strings.Contains(text, "service is not loaded")
 }
