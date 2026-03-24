@@ -66,6 +66,8 @@ func debugf(format string, args ...any) {
 // 字段可见性规则：
 //   - 首字母大写（如 IP、Token）= 公开，可以从其他包访问（类似 Python 的 public）
 //   - 首字母小写（如 deviceID、stamp）= 私有，只能在同一包内访问（类似 Python 的 _前缀约定）
+const handshakeTTL = 5 * time.Minute // 握手缓存有效期，超时后强制重新握手同步设备时间戳
+
 type MiIO struct {
 	IP            string     // 设备 IP 地址
 	Token         []byte     // 设备 token（已从十六进制字符串解码为字节）
@@ -74,6 +76,7 @@ type MiIO struct {
 	msgID         int        // 消息序号，每次发送后递增，设备用它匹配请求和响应
 	mu            sync.Mutex // 保护并发访问，Send 全程持锁
 	handshakeDone bool       // 握手结果已缓存，避免每次 Send 重新握手
+	handshakeAt   time.Time  // 上次握手时间，用于判断缓存是否过期
 }
 
 // NewMiIO 是 MiIO 的构造函数。
@@ -161,6 +164,7 @@ func (m *MiIO) Handshake() error {
 	// binary.BigEndian.Uint32 把 4 个字节解析为大端序 uint32 整数。
 	// 等价于 Python 的 int.from_bytes(buf[12:16], 'big')。
 	m.stamp = binary.BigEndian.Uint32(buf[12:16])
+	m.handshakeAt = time.Now()
 	debugf("handshake ok ip=%s device_id=%s stamp=%d", m.IP, hex.EncodeToString(m.deviceID), m.stamp)
 	return nil // 返回 nil 表示没有错误，等价于 Python 的 return（没有异常）
 }
@@ -173,27 +177,41 @@ func (m *MiIO) Handshake() error {
 //
 // json.RawMessage 是 []byte 的别名，表示"还没有解析的原始 JSON 数据"，
 // 让调用方自己决定如何解析，提供了灵活性。
+const maxRetries = 3 // 最多尝试次数（首次 + 2次重试）
+
 func (m *MiIO) Send(method string, params any) (json.RawMessage, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 首次调用或上次设备通信出错后，重新握手获取最新时间戳。
-	// 缓存握手结果，避免每次命令都多一个 UDP 往返。
-	if !m.handshakeDone {
-		if err := m.Handshake(); err != nil {
-			return nil, err
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		// 首次调用、上次出错后、握手缓存超过 TTL，或重试时，重新握手同步设备时间戳。
+		if !m.handshakeDone || time.Since(m.handshakeAt) > handshakeTTL {
+			if err := m.Handshake(); err != nil {
+				lastErr = err
+				m.handshakeDone = false
+				debugf("handshake attempt %d/%d failed: %v", attempt+1, maxRetries, err)
+				continue // 握手也参与重试，第一个 hello 可能只是唤醒设备 WiFi
+			}
+			m.handshakeDone = true
 		}
-		m.handshakeDone = true
-	}
 
-	// 递增消息 ID，确保每条消息有唯一编号。
-	// ++ 是自增操作，等价于 Python 的 m.msgID += 1（Go 没有 += 的简写 ++= ）。
+		result, err := m.sendOnce(method, params)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		debugf("send attempt %d/%d failed: %v", attempt+1, maxRetries, err)
+		m.handshakeDone = false // 强制下次重试重新握手
+	}
+	return nil, lastErr
+}
+
+// sendOnce 执行一次实际的 UDP 发包和接收，不含重试逻辑。
+// 调用方（Send）负责重试和握手管理。
+func (m *MiIO) sendOnce(method string, params any) (json.RawMessage, error) {
 	m.msgID++
 
-	// json.Marshal 把 Go 数据结构序列化为 JSON 字节切片。
-	// 等价于 Python 的 json.dumps({...}).encode()。
-	// map[string]any 是字典类型，key 是 string，value 是 any（任意类型）。
-	// 等价于 Python 的 dict。
 	payload, err := json.Marshal(map[string]any{
 		"id":     m.msgID,
 		"method": method,
@@ -204,57 +222,40 @@ func (m *MiIO) Send(method string, params any) (json.RawMessage, error) {
 	}
 	debugf("request id=%d method=%s params=%s", m.msgID, method, mustJSON(params))
 
-	// append(payload, 0x00) 在字节切片末尾追加一个空字节。
-	// python-miio 也会追加这个字节，设备期望 JSON 以 \0 结尾。
-	// 等价于 Python 的 payload + b"\x00"。
 	payload = append(payload, 0x00)
 
-	// 用 token 对 payload 进行 AES 加密（函数定义在下面）。
 	encrypted, err := miioEncrypt(payload, m.Token)
 	if err != nil {
 		return nil, err
 	}
 
-	// uint16() 是类型转换，把 int 转为无符号 16 位整数。
-	// 等价于 Python 的 int 自动处理，但 Go 需要显式转换类型。
-	// 包总长度 = 32字节 header + 加密后的 payload 长度。
 	pktLen := uint16(32 + len(encrypted))
 
-	// 时间戳 +1，避免和握手包的时间戳重复（协议要求）。
-	stamp := m.stamp + 1
+	// 基于握手时间和实际经过的秒数计算 stamp，保持与设备时钟同步。
+	// 设备的 stamp 是秒级递增的计数器，每秒 +1。
+	// 之前的 m.stamp++ 每次命令只 +1，但命令间隔可能有 15 秒，
+	// 导致 stamp 快速漂移，设备静默丢弃偏差过大的包 → i/o timeout。
+	elapsed := uint32(time.Since(m.handshakeAt).Seconds()) + 1
+	stamp := m.stamp + elapsed
 
-	// 构建 16 字节的包 header（不含 checksum）。
-	// make([]byte, 16) 创建 16 字节的零值切片（全为 0x00）。
 	header := make([]byte, 16)
-	header[0], header[1] = 0x21, 0x31 // 魔数（多重赋值）
-
-	// binary.BigEndian.PutUint16 把 uint16 写入字节切片（大端序）。
-	// 等价于 Python 的 struct.pack(">H", pkt_len)。
+	header[0], header[1] = 0x21, 0x31
 	binary.BigEndian.PutUint16(header[2:4], pktLen)
-	binary.BigEndian.PutUint32(header[4:8], 0x00000000) // unknown 字段
-	// copy(dst, src) 把 src 内容复制到 dst，等价于 Python 的切片赋值。
+	binary.BigEndian.PutUint32(header[4:8], 0x00000000)
 	copy(header[8:12], m.deviceID)
 	binary.BigEndian.PutUint32(header[12:16], stamp)
 
-	// 计算 checksum = MD5(header + token + encrypted_payload)。
-	// md5.New() 创建 MD5 哈希对象，等价于 Python 的 hashlib.md5()。
 	h := md5.New()
-	h.Write(header) // 分多次写入数据（MD5 是流式计算）
+	h.Write(header)
 	h.Write(m.Token)
 	h.Write(encrypted)
-	// h.Sum(nil) 返回最终的 MD5 值（16字节），nil 表示不追加到额外的字节切片。
-	// 等价于 Python 的 h.digest()。
 	checksum := h.Sum(nil)
 
-	// 拼装最终数据包：header + checksum + encrypted_payload。
-	// append 可以用 ... 展开切片追加，等价于 Python 的 list1 + list2。
 	packet := append(header, checksum...)
 	packet = append(packet, encrypted...)
 
-	// 重新建立 UDP 连接发送命令包（与握手分开，避免共用连接的状态问题）。
 	conn, err := net.DialTimeout("udp", fmt.Sprintf("%s:54321", m.IP), miioTimeout)
 	if err != nil {
-		m.handshakeDone = false
 		return nil, err
 	}
 	defer conn.Close()
@@ -265,7 +266,6 @@ func (m *MiIO) Send(method string, params any) (json.RawMessage, error) {
 	}
 	debugf("packet sent len=%d encrypted_len=%d", len(packet), len(encrypted))
 
-	// 接收设备响应，最大 4096 字节。
 	buf := make([]byte, 4096)
 	n, err := conn.Read(buf)
 	if err != nil {
@@ -275,39 +275,26 @@ func (m *MiIO) Send(method string, params any) (json.RawMessage, error) {
 		return nil, fmt.Errorf("response too short")
 	}
 
-	// 响应包前 32 字节是 header，之后是加密的 payload。
-	// buf[32:n] 取索引 32 到 n 的数据（实际接收到的部分）。
 	decrypted, err := miioDecrypt(buf[32:n], m.Token)
 	if err != nil {
 		return nil, fmt.Errorf("decryption failed: %w", err)
 	}
 
-	// 去掉末尾的空字节（设备响应也以 \0 结尾）。
-	// bytes.TrimRight 等价于 Python 的 data.rstrip(b"\x00")。
 	decrypted = bytes.TrimRight(decrypted, "\x00")
 	debugf("response raw=%s", string(decrypted))
 
-	// 用匿名结构体解析响应 JSON。
-	// 匿名结构体是一次性使用的结构体，不需要单独命名，直接在 var 里定义。
-	// 字段后面的 `json:"result"` 是"结构体标签"（struct tag），
-	// 告诉 json.Unmarshal 把 JSON 的 "result" 字段映射到这个字段。
-	// 等价于 Python 的 resp = json.loads(data); resp.get("result")。
 	var resp struct {
-		Result json.RawMessage `json:"result"` // 成功时的返回值，延迟解析
-		Error  *struct {       // * 表示指针，nil 时代表没有 error 字段
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
 			Code    int    `json:"code"`
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 
-	// json.Unmarshal 把 JSON 字节解析到 Go 结构体。
-	// &resp 传入指针，让 Unmarshal 能修改 resp 的值。
-	// 等价于 Python 的 resp = json.loads(decrypted)。
 	if err := json.Unmarshal(decrypted, &resp); err != nil {
 		return nil, fmt.Errorf("invalid response JSON: %w", err)
 	}
 
-	// 检查设备是否返回了错误。
 	if resp.Error != nil {
 		m.handshakeDone = false
 		return nil, fmt.Errorf("device error %d: %s", resp.Error.Code, resp.Error.Message)
